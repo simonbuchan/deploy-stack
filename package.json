@@ -1,0 +1,25 @@
+{
+  "name": "@simonbuchan/deploy-stack",
+  "version": "1.0.0",
+  "license": "MIT",
+  "repository": "https://github.com/simonbuchan/deploy-stack",
+  "bin": "lib/cli.js",
+  "main": "lib/deployStack.js",
+  "scripts": {
+    "start": "tsc -b src && node lib/cli.js",
+    "build": "tsc -b src && tsc -b src/tsconfig.es.json",
+    "prepare": "npm run build"
+  },
+  "dependencies": {
+    "aws-sdk": "^2.123.0",
+    "log-update": "^2.3.0",
+    "table": "^5.0.2"
+  },
+  "devDependencies": {
+    "@types/node": "^10.10.1",
+    "@types/table": "^4.0.5",
+    "@types/log-update": "^2.0.0",
+    "typescript": "~3.0.3",
+    "prettier": "^1.14.2"
+  }
+}
