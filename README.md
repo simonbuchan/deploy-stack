@@ -35,7 +35,7 @@ Built in typescript, so you should get a good experience in editors that support
 ```js
 import AWS from "aws-sdk/global";
 import CloudFormation from "aws-sdk/clients/cloudformation";
-import deployStack from "@simonbuchan/deploy-stack";
+import deployStack, { createPrompt, createTableWaiter } from "@simonbuchan/deploy-stack";
 
 deployStack({
   // Required:
@@ -48,32 +48,36 @@ deployStack({
 
   // Optional:
   logger: console,
-  prompt: (message) => {
-    // Prompt the user for if they want to execute the change set,
-    // Return a promise for a boolean.
-  },
-  waiter: {
-    progress({ client, reason, stack }) {
-      // client is the outer client.
-      // reason is one of:
-      //   - 'DELETING_EXISTING':
-      //     Removing a dead existing stack: e.g.
-      //     ROLLBACK_COMPLETE, CREATE_FAILED
-      //   - 'IN_PROGRESS_EXISTING':
-      //     Waiting for a currently *_IN_PROGRESS
-      //     stack to complete before attempting to
-      //     create a change set.
-      //   - 'EXECUTING':
-      //     Actually applying current stack.
-      //
-      // Can return a promise (e.g. be async)
-      // and it will block the stack polling loop
-      // so you don't overlap.
-    },
-    async complete({ client, reason, stack }) {
-      // same as above ...
-    },
-  },
+  
+  prompt: createPrompt(process.stdin, process.stdout),
+  // prompt: (message) => {
+  //   // Prompt the user for if they want to execute the change set,
+  //   // Return a promise for a boolean.
+  // },
+
+  waiter: createTableWaiter(),
+  // waiter: {
+  //   progress({ client, reason, stack }) {
+  //     // client is the outer client.
+  //     // reason is one of:
+  //     //   - 'DELETING_EXISTING':
+  //     //     Removing a dead existing stack: e.g.
+  //     //     ROLLBACK_COMPLETE, CREATE_FAILED
+  //     //   - 'IN_PROGRESS_EXISTING':
+  //     //     Waiting for a currently *_IN_PROGRESS
+  //     //     stack to complete before attempting to
+  //     //     create a change set.
+  //     //   - 'EXECUTING':
+  //     //     Actually applying current stack.
+  //     //
+  //     // Can return a promise (e.g. be async)
+  //     // and it will block the stack polling loop
+  //     // so you don't overlap.
+  //   },
+  //   async complete({ client, reason, stack }) {
+  //     // same as above ...
+  //   },
+  // },
   parameters: [
     {
       ParameterKey: "DomainName",

@@ -2,11 +2,8 @@
 import * as CloudFormation from "aws-sdk/clients/cloudformation";
 import * as AWS from "aws-sdk/global";
 import * as fs from "fs";
-import { createTableWaiter } from "./createTableWaiter";
 
-import deployStack, {
-  DeployStackError,
-} from "./deployStack";
+import deployStack, { DeployStackError, createTableWaiter } from "./index";
 
 import {
   argsSymbol,

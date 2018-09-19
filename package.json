@@ -1,13 +1,13 @@
 {
   "name": "@simonbuchan/deploy-stack",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "license": "MIT",
   "repository": "https://github.com/simonbuchan/deploy-stack",
   "bin": "lib/cli.js",
-  "main": "lib/deployStack.js",
+  "main": "lib/index.js",
   "scripts": {
     "start": "tsc -b src && node lib/cli.js",
-    "build": "tsc -b src && tsc -b src/tsconfig.es.json",
+    "build": "tsc -b src",
     "prepare": "npm run build"
   },
   "dependencies": {

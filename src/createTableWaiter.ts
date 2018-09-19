@@ -2,7 +2,7 @@ import * as logUpdate from "log-update";
 import { getBorderCharacters, table } from "table";
 import { StackWaiter } from "./deployStack";
 
-export function createTableWaiter(): StackWaiter {
+export default function createTableWaiter(): StackWaiter {
   return {
     async progress({ client, reason, stack }) {
       if (!stack) return;
