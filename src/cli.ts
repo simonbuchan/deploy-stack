@@ -3,7 +3,11 @@ import * as CloudFormation from "aws-sdk/clients/cloudformation";
 import * as AWS from "aws-sdk/global";
 import * as fs from "fs";
 
-import deployStack, { DeployStackError, createTableWaiter } from "./index";
+import deployStack, {
+  DeployStackError,
+  createTableWaiter,
+  createEventLogWaiter,
+} from "./";
 
 import {
   argsSymbol,
@@ -127,10 +131,14 @@ async function main(options: Options) {
     throw new OptionError("Template path does not exist: " + templatePath);
   }
 
+  const waiter = process.stdin.isTTY
+    ? createTableWaiter()
+    : createEventLogWaiter();
+
   const client = new CloudFormation({ region, credentials });
 
   await deployStack({
-    waiter: createTableWaiter(),
+    waiter,
     client,
     templateBody: fs.readFileSync(templatePath, "utf-8"),
     stackName,

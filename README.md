@@ -57,9 +57,9 @@ deployStack({
 
   waiter: createTableWaiter(),
   // waiter: {
-  //   progress({ client, reason, stack }) {
-  //     // client is the outer client.
-  //     // reason is one of:
+  //   progress({ client, reason, stackName, stack, changes }) {
+  //     // - client is the outer client.
+  //     // - reason is one of:
   //     //   - 'DELETING_EXISTING':
   //     //     Removing a dead existing stack: e.g.
   //     //     ROLLBACK_COMPLETE, CREATE_FAILED
@@ -69,12 +69,17 @@ deployStack({
   //     //     create a change set.
   //     //   - 'EXECUTING':
   //     //     Actually applying current stack.
+  //     // - stackName is the outer parameter, and is always set.
+  //     // - stack is the output of DescribeStack() and will only be set
+  //     //   when reason is EXECUTING.
+  //     // - changes is an array of DescribeChangeSet() changes and
+  //     //   will only be set when reason is EXECUTING
   //     //
   //     // Can return a promise (e.g. be async)
   //     // and it will block the stack polling loop
   //     // so you don't overlap.
   //   },
-  //   async complete({ client, reason, stack }) {
+  //   async complete({ client, reason, stackName, stack, changes }) {
   //     // same as above ...
   //   },
   // },

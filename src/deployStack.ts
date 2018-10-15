@@ -25,7 +25,7 @@ export class InvalidCompleteStatusStackError extends DeployStackError {
   ) {
     const { StackName, StackStatus, StackStatusReason } = stackDetails;
     super(
-      `Stack '${StackName}' failed to delete, it now has status ${StackStatus}: ${StackStatusReason}`,
+      `Stack '${StackName}' failed to ${type}, it now has status ${StackStatus}: ${StackStatusReason}`,
     );
     this.stackDetails = stackDetails;
   }
@@ -56,7 +56,9 @@ export type StackWaiterReason =
 export interface StackWaiterContext {
   client: CloudFormation;
   reason: StackWaiterReason;
+  stackName: string;
   stack: CloudFormation.Stack | null;
+  changes: CloudFormation.Changes | null;
 }
 
 export interface StackWaiter {
@@ -89,6 +91,7 @@ export default async function deployStack({
   capabilities,
   tags,
 }: DeployStackOptions) {
+  let changes: CloudFormation.Changes | null;
   const type = await getChangeSetType();
   async function getChangeSetType(): Promise<"CREATE" | "UPDATE"> {
     const stack = await getStack();
@@ -173,7 +176,7 @@ export default async function deployStack({
     }#/changeset/detail?${reviewUrlParams}`,
   );
 
-  let changeSet;
+  let changeSet: CloudFormation.DescribeChangeSetOutput;
   do {
     await sleep(1000);
     changeSet = await client
@@ -198,7 +201,19 @@ export default async function deployStack({
     return;
   }
 
-  logger.log("Changes:\n%O", changeSet.Changes);
+  changes = changeSet.Changes!;
+  while (changeSet.NextToken) {
+    changeSet = await client
+      .describeChangeSet({
+        StackName: stackName,
+        ChangeSetName: changeSetName,
+        NextToken: changeSet.NextToken,
+      })
+      .promise();
+    changes.push(...changeSet.Changes!);
+  }
+
+  logger.log("Changes:\n%O", changes);
 
   if (!(await prompt("Deploy?"))) {
     await deleteChangeSet();
@@ -242,9 +257,9 @@ export default async function deployStack({
     do {
       await sleep(2000);
       stack = await getStack();
-      if (waiter) await waiter.progress({ client, reason, stack });
+      if (waiter) await waiter.progress({ client, reason, stackName, stack, changes });
     } while (stack && stack.StackStatus.endsWith("_IN_PROGRESS"));
-    if (waiter) await waiter.complete({ client, reason, stack });
+    if (waiter) await waiter.complete({ client, reason, stackName, stack, changes });
     return stack;
   }
 

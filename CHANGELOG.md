@@ -10,7 +10,13 @@ and this project adheres to
 
 ### Added
 
+- `createEventLogWaiter()` export.
+
 ### Changed
+
+- New waiter used by CLI when stdout is not a TTY.
+- Fix error message when stack operation fails to say `CREATE`, `UPDATE`, or
+  `DELETE` instead of always saying `delete`.
 
 ### Removed
 
