@@ -20,13 +20,19 @@ import {
 } from "./options";
 
 const helpMessage = `\
-Usage: deploy-stack \\
+Usage:
+  deploy-stack \\
     [credential options] \\
     --region REGION \\
     --stack-name NAME \\
     --template-path PATH \\
     [additional options] \\
     [template parameters]
+
+  deploy-stack --help
+
+  deploy-stack --version
+
 
 Credential options:
    [--profile NAME]                    # Profile name in ~/.aws/credentials
@@ -36,6 +42,7 @@ Credential options:
     By default, the standard AWS SDK fallback logic is used, that is:
     $AWS_* environment variables, then ~/.aws/credentials, then EC2 Instance
     profile.
+
 
 Required options:
     --region REGION                    # AWS region to create stack in
@@ -74,6 +81,11 @@ async function main(options: Options) {
     return;
   }
 
+  if (getFlagOption(options, "version")) {
+    console.log(require("../package.json").version);
+    return;
+  }
+
   const profile = getStringOption(options, "profile", null);
   const accessKeyId = getStringOption(options, "access-key-id", null);
   const secretAccessKey = getStringOption(options, "secret-access-key", null);
@@ -83,7 +95,8 @@ async function main(options: Options) {
   const stackName = getStringOption(options, "stack-name");
   const templatePath = getStringOption(options, "template-path");
 
-  const capabilities = getStringOption(options, "capabilities", "").split(",");
+  const capabilitiesString = getStringOption(options, "capabilities", null);
+  const capabilities = capabilitiesString !== null ? capabilitiesString.split(",") : undefined;
 
   const tags: CloudFormation.Tags = [];
   for (const name of Object.keys(options)) {
@@ -146,15 +159,14 @@ async function main(options: Options) {
     capabilities,
     tags,
   });
+
+  console.log("Done");
+  // Not sure what's keeping it running...
+  process.exit(0);
 }
 
 if (require.main === module) {
-  main(parseOptions()).then(
-    () => {
-      console.log("Done");
-      // Not sure what's keeping it running...
-      process.exit(0);
-    },
+  main(parseOptions()).catch(
     error => {
       if (error instanceof OptionError) {
         console.error(error.message);
