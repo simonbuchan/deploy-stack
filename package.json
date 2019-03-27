@@ -6,8 +6,8 @@
   "bin": "lib/cli.js",
   "main": "lib/index.js",
   "scripts": {
-    "start": "tsc -b src && node lib/cli.js",
-    "build": "tsc -b src",
+    "start": "tsc -p src && node lib/cli.js",
+    "build": "tsc -p src",
     "prepare": "npm run build"
   },
   "dependencies": {
