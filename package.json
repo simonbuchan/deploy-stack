@@ -1,6 +1,6 @@
 {
   "name": "@simonbuchan/deploy-stack",
-  "version": "1.0.3",
+  "version": "2.0.0",
   "license": "MIT",
   "repository": "https://github.com/simonbuchan/deploy-stack",
   "bin": "lib/cli.js",
