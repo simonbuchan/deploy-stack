@@ -1,7 +1,9 @@
 #!/usr/bin/env node
-import * as CloudFormation from "aws-sdk/clients/cloudformation";
-import * as AWS from "aws-sdk/global";
-import * as fs from "fs";
+import * as fs from "node:fs";
+
+import * as AWS from "@aws-sdk/types";
+import * as CloudFormation from "@aws-sdk/client-cloudformation";
+import * as Credentials from "@aws-sdk/credential-providers";
 
 import deployStack, {
   DeployStackError,
@@ -96,9 +98,10 @@ async function main(options: Options) {
   const templatePath = getStringOption(options, "template-path");
 
   const capabilitiesString = getStringOption(options, "capabilities", null);
-  const capabilities = capabilitiesString !== null ? capabilitiesString.split(",") : undefined;
+  const capabilities =
+    capabilitiesString !== null ? capabilitiesString.split(",") : undefined;
 
-  const tags: CloudFormation.Tags = [];
+  const tags: CloudFormation.Tag[] = [];
   for (const name of Object.keys(options)) {
     const match = name.match(/^tag:(.*)$/);
     if (match) {
@@ -111,7 +114,7 @@ async function main(options: Options) {
     }
   }
 
-  const parameters: CloudFormation.Parameters = [];
+  const parameters: CloudFormation.Parameter[] = [];
   const args = options[argsSymbol];
   while (args.length) {
     const arg = args[0];
@@ -127,17 +130,25 @@ async function main(options: Options) {
 
   checkForUnknownOptions(options);
 
-  let credentials: AWS.Credentials | undefined;
-  if (profile !== null) {
-    credentials = new AWS.SharedIniFileCredentials({ profile });
+  if (capabilities) {
+    assertAll(capabilities, assertCapability);
   }
-  if (accessKeyId || secretAccessKey) {
+
+  let credentials: AWS.CredentialProvider | undefined;
+  if (profile !== null) {
+    if (accessKeyId) {
+      throw new OptionError(
+        "Must pass only one of --profile or --access-key-id",
+      );
+    }
+    credentials = Credentials.fromIni({ profile });
+  } else if (accessKeyId || secretAccessKey) {
     if (!accessKeyId || !secretAccessKey) {
       throw new OptionError(
         "Must pass both --access-key-id and --secret-access-key if one is used",
       );
     }
-    credentials = new AWS.Credentials({ accessKeyId, secretAccessKey });
+    credentials = async () => ({ accessKeyId, secretAccessKey });
   }
 
   if (!fs.existsSync(templatePath)) {
@@ -148,7 +159,10 @@ async function main(options: Options) {
     ? createTableWaiter()
     : createEventLogWaiter();
 
-  const client = new CloudFormation({ region, credentials });
+  const client = new CloudFormation.CloudFormationClient({
+    region,
+    credentials,
+  });
 
   await deployStack({
     waiter,
@@ -165,19 +179,38 @@ async function main(options: Options) {
   process.exit(0);
 }
 
+function assertAll<T, R extends T>(
+  array: T[],
+  assert: (item: T) => asserts item is R,
+): asserts array is R[] {
+  for (const item of array) {
+    assert(item);
+  }
+}
+
+function assertCapability(
+  value: string,
+): asserts value is CloudFormation.Capability {
+  if (!Object.prototype.hasOwnProperty.call(CloudFormation.Capability, value)) {
+    throw new OptionError(
+      `--capability not valid: ${value}. Must be one of: ${Object.keys(
+        CloudFormation.Capability,
+      ).join(", ")}`,
+    );
+  }
+}
+
 if (require.main === module) {
-  main(parseOptions()).catch(
-    error => {
-      if (error instanceof OptionError) {
-        console.error(error.message);
-        process.exit(2);
-      } else if (error instanceof DeployStackError) {
-        console.error(error.message);
-        process.exit(3);
-      } else {
-        console.error(error.stack);
-        process.exit(1);
-      }
-    },
-  );
+  main(parseOptions()).catch((error) => {
+    if (error instanceof OptionError) {
+      console.error(error.message);
+      process.exit(2);
+    } else if (error instanceof DeployStackError) {
+      console.error(error.message);
+      process.exit(3);
+    } else {
+      console.error(error.stack);
+      process.exit(1);
+    }
+  });
 }

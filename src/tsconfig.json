@@ -7,9 +7,9 @@
     "declarationMap": true,
     "moduleResolution": "node",
     "module": "commonjs",
-    "target": "es2015",
+    "target": "es2020",
     "lib": [
-      "es2015"
+      "es2020"
     ],
     "strict": true
   }

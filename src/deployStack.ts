@@ -1,6 +1,7 @@
-import * as CloudFormation from "aws-sdk/clients/cloudformation";
-import { URLSearchParams } from "url";
-import * as util from "util";
+import { URLSearchParams } from "node:url";
+import * as util from "node:util";
+
+import * as CloudFormation from "@aws-sdk/client-cloudformation";
 
 const sleep = util.promisify(setTimeout);
 
@@ -8,6 +9,7 @@ export class DeployStackError extends Error {}
 
 export class InvalidStatusBeforeUpdateStackError extends DeployStackError {
   public stackDetails: CloudFormation.Stack;
+
   constructor(stackDetails: CloudFormation.Stack) {
     const { StackName, StackStatus, StackStatusReason } = stackDetails;
     super(
@@ -19,6 +21,7 @@ export class InvalidStatusBeforeUpdateStackError extends DeployStackError {
 
 export class InvalidCompleteStatusStackError extends DeployStackError {
   public stackDetails: CloudFormation.Stack;
+
   constructor(
     stackDetails: CloudFormation.Stack,
     type: "CREATE" | "UPDATE" | "DELETE",
@@ -33,6 +36,7 @@ export class InvalidCompleteStatusStackError extends DeployStackError {
 
 export class ChangeSetNotAvailableError extends DeployStackError {
   public changeSetDetails: CloudFormation.ChangeSetSummary;
+
   constructor(changeSetDetails: CloudFormation.ChangeSetSummary) {
     const { ExecutionStatus, Status, StatusReason } = changeSetDetails;
     super(`\
@@ -54,11 +58,11 @@ export type StackWaiterReason =
   | "EXECUTING";
 
 export interface StackWaiterContext {
-  client: CloudFormation;
+  client: CloudFormation.CloudFormationClient;
   reason: StackWaiterReason;
   stackName: string;
   stack: CloudFormation.Stack | null;
-  changes: CloudFormation.Changes | null;
+  changes: CloudFormation.Change[] | null;
 }
 
 export interface StackWaiter {
@@ -71,12 +75,12 @@ export interface DeployStackOptions {
   prompt?: (message: string) => boolean | PromiseLike<boolean>;
   waiter?: StackWaiter;
 
-  client: CloudFormation;
+  client: CloudFormation.CloudFormationClient;
   templateBody: string;
   stackName: string;
-  parameters?: CloudFormation.Parameters;
-  capabilities?: CloudFormation.Capabilities;
-  tags?: CloudFormation.Tags;
+  parameters?: CloudFormation.Parameter[];
+  capabilities?: CloudFormation.Capability[];
+  tags?: CloudFormation.Tag[];
 }
 
 export default async function deployStack({
@@ -91,8 +95,9 @@ export default async function deployStack({
   capabilities,
   tags,
 }: DeployStackOptions) {
-  let changes: CloudFormation.Changes | null;
+  let changes: CloudFormation.Change[] | null;
   const type = await getChangeSetType();
+
   async function getChangeSetType(): Promise<"CREATE" | "UPDATE"> {
     const stack = await getStack();
     if (!stack || stack.StackStatus === "REVIEW_IN_PROGRESS") {
@@ -110,11 +115,11 @@ export default async function deployStack({
       stack.StackStatus === "ROLLBACK_COMPLETE"
     ) {
       logger.log("Stack failed to create, replacing...");
-      await client
-        .deleteStack({
+      await client.send(
+        new CloudFormation.DeleteStackCommand({
           StackName: stackName,
-        })
-        .promise();
+        }),
+      );
       const stack = await waitUntilDone("DELETE_EXISTING");
       if (stack && stack.StackStatus !== "DELETE_COMPLETE") {
         throw new InvalidCompleteStatusStackError(stack, "DELETE");
@@ -122,7 +127,7 @@ export default async function deployStack({
       return "CREATE";
     }
 
-    if (stack.StackStatus.endsWith("_COMPLETE")) {
+    if (stack.StackStatus?.endsWith("_COMPLETE")) {
       logger.log(
         "Stack exists with status %O, updating existing...",
         stack.StackStatus,
@@ -130,7 +135,7 @@ export default async function deployStack({
       return "UPDATE";
     }
 
-    if (stack.StackStatus.endsWith("_IN_PROGRESS")) {
+    if (stack.StackStatus?.endsWith("_IN_PROGRESS")) {
       logger.log(
         "Stack is in progress with status %O, waiting...",
         stack.StackStatus,
@@ -150,8 +155,8 @@ export default async function deployStack({
   const changeSetName = `deploy-${new Date()
     .toISOString()
     .replace(/[^-\w]/g, "-")}`;
-  const create = await client
-    .createChangeSet({
+  const create = await client.send(
+    new CloudFormation.CreateChangeSetCommand({
       StackName: stackName,
       ChangeSetName: changeSetName,
       ChangeSetType: type,
@@ -159,32 +164,28 @@ export default async function deployStack({
       Parameters: parameters,
       Capabilities: capabilities,
       Tags: tags,
-    })
-    .promise();
+    }),
+  );
 
   logger.log("Created change set %O", create.Id);
   const reviewUrlParams = new URLSearchParams({
-    changeSetId: create.Id,
-    stackId: create.StackId,
+    changeSetId: create.Id!,
+    stackId: create.StackId!,
   });
   logger.log(
     "Review at %s",
-    `https://${
-      client.config.region
-    }.console.aws.amazon.com/cloudformation/home?region=${
-      client.config.region
-    }#/changeset/detail?${reviewUrlParams}`,
+    `https://${client.config.region}.console.aws.amazon.com/cloudformation/home?region=${client.config.region}#/changeset/detail?${reviewUrlParams}`,
   );
 
   let changeSet: CloudFormation.DescribeChangeSetOutput;
   do {
     await sleep(1000);
-    changeSet = await client
-      .describeChangeSet({
+    changeSet = await client.send(
+      new CloudFormation.DescribeChangeSetCommand({
         StackName: stackName,
         ChangeSetName: changeSetName,
-      })
-      .promise();
+      }),
+    );
   } while (changeSet.Status === "CREATE_IN_PROGRESS");
 
   if (changeSet.ExecutionStatus !== "AVAILABLE") {
@@ -203,13 +204,13 @@ export default async function deployStack({
 
   changes = changeSet.Changes!;
   while (changeSet.NextToken) {
-    changeSet = await client
-      .describeChangeSet({
+    changeSet = await client.send(
+      new CloudFormation.DescribeChangeSetCommand({
         StackName: stackName,
         ChangeSetName: changeSetName,
         NextToken: changeSet.NextToken,
-      })
-      .promise();
+      }),
+    );
     changes.push(...changeSet.Changes!);
   }
 
@@ -221,12 +222,12 @@ export default async function deployStack({
   }
 
   logger.log("Executing change set...");
-  await client
-    .executeChangeSet({
+  await client.send(
+    new CloudFormation.ExecuteChangeSetCommand({
       StackName: stackName,
       ChangeSetName: changeSetName,
-    })
-    .promise();
+    }),
+  );
 
   {
     const stack = (await waitUntilDone("EXECUTING"))!;
@@ -244,12 +245,12 @@ export default async function deployStack({
 
   async function deleteChangeSet() {
     logger.log("Deleting change set...");
-    await client
-      .deleteChangeSet({
+    await client.send(
+      new CloudFormation.DeleteChangeSetCommand({
         StackName: stackName,
         ChangeSetName: changeSetName,
-      })
-      .promise();
+      }),
+    );
   }
 
   async function waitUntilDone(reason: StackWaiterReason) {
@@ -257,22 +258,24 @@ export default async function deployStack({
     do {
       await sleep(2000);
       stack = await getStack();
-      if (waiter) await waiter.progress({ client, reason, stackName, stack, changes });
-    } while (stack && stack.StackStatus.endsWith("_IN_PROGRESS"));
-    if (waiter) await waiter.complete({ client, reason, stackName, stack, changes });
+      if (waiter)
+        await waiter.progress({ client, reason, stackName, stack, changes });
+    } while (stack && stack.StackStatus?.endsWith("_IN_PROGRESS"));
+    if (waiter)
+      await waiter.complete({ client, reason, stackName, stack, changes });
     return stack;
   }
 
   async function getStack() {
     try {
-      const res = await client
-        .describeStacks({ StackName: stackName })
-        .promise();
+      const res = await client.send(
+        new CloudFormation.DescribeStacksCommand({ StackName: stackName }),
+      );
       return res.Stacks![0];
     } catch (e) {
       if (
-        e &&
-        e.code === "ValidationError" &&
+        e instanceof Error &&
+        e.name === "ValidationError" &&
         e.message === `Stack with id ${stackName} does not exist`
       ) {
         return null;
@@ -303,7 +306,7 @@ export async function getKey(stdin = process.stdin) {
   let paused = stdin.isPaused();
   try {
     stdin.setRawMode!(true);
-    key = await new Promise<Buffer>(resolve => {
+    key = await new Promise<Buffer>((resolve) => {
       stdin.once("data", resolve);
     });
     if (paused) stdin.resume();

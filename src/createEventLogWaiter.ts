@@ -1,4 +1,4 @@
-import * as CloudFormation from "aws-sdk/clients/cloudformation";
+import * as CloudFormation from "@aws-sdk/client-cloudformation";
 import { StackWaiter } from "./deployStack";
 
 export default function createEventLogWaiter(): StackWaiter {
@@ -7,7 +7,7 @@ export default function createEventLogWaiter(): StackWaiter {
   let maxResourceIdLength: number | undefined;
 
   return {
-    async progress({ client, reason, stackName, changes }) {
+    async progress({ client, stackName, changes }) {
       await printNewEvents(client, stackName, changes);
     },
     async complete({ client, reason, stackName, changes }) {
@@ -17,53 +17,48 @@ export default function createEventLogWaiter(): StackWaiter {
   };
 
   async function printNewEvents(
-    client: CloudFormation,
+    client: CloudFormation.CloudFormationClient,
     stackName: string,
-    changes: CloudFormation.Changes | null,
+    changes: CloudFormation.Change[] | null,
   ) {
     let firstEventRead: Date | undefined;
     let lastEventRead: Date | undefined;
-    let nextEventToken: CloudFormation.NextToken | undefined = undefined;
 
     if (!maxResourceIdLength) {
       if (changes) {
         maxResourceTypeLength = maxStringLength(
           changes
-            .filter(change => change.Type === "Resource")
-            .map(change => change.ResourceChange!.ResourceType!),
+            .filter((change) => change.Type === "Resource")
+            .map((change) => change.ResourceChange!.ResourceType!),
           "AWS::CloudFormation::Stack".length,
         );
         maxResourceIdLength = maxStringLength(
           changes
-            .filter(change => change.Type === "Resource")
-            .map(change => change.ResourceChange!.LogicalResourceId!),
+            .filter((change) => change.Type === "Resource")
+            .map((change) => change.ResourceChange!.LogicalResourceId!),
           stackName.length,
         );
       } else {
-        const response = await client
-          .describeStackResources({
+        const response = await client.send(
+          new CloudFormation.DescribeStackResourcesCommand({
             StackName: stackName,
-          })
-          .promise();
+          }),
+        );
         maxResourceTypeLength = maxStringLength(
-          response.StackResources!.map(r => r.ResourceType!),
+          response.StackResources!.map((r) => r.ResourceType!),
           "AWS::CloudFormation::Stack".length,
         );
         maxResourceIdLength = maxStringLength(
-          response.StackResources!.map(r => r.LogicalResourceId!),
+          response.StackResources!.map((r) => r.LogicalResourceId!),
           stackName.length,
         );
       }
     }
 
-    do {
-      let eventResponse: CloudFormation.DescribeStackEventsOutput = await client
-        .describeStackEvents({
-          StackName: stackName,
-          NextToken: nextEventToken,
-        })
-        .promise();
-
+    for await (const eventResponse of CloudFormation.paginateDescribeStackEvents(
+      { client },
+      { StackName: stackName },
+    )) {
       let events = eventResponse.StackEvents || [];
 
       if (events.length) {
@@ -73,24 +68,25 @@ export default function createEventLogWaiter(): StackWaiter {
         lastEventRead = events[events.length - 1].Timestamp;
 
         const newEvents = events.filter(
-          event => event.Timestamp > lastEventPrinted,
+          (event) => event.Timestamp! > lastEventPrinted,
         );
 
         for (const event of newEvents) {
           console.log(
             [
-              padRight(event.Timestamp.toISOString(), 24),
-              padRight(event.ResourceType, maxResourceTypeLength!),
-              padRight(event.LogicalResourceId, maxResourceIdLength),
-              padRight(event.ResourceStatus, 18),
+              event.Timestamp?.toISOString().padEnd(24),
+              event.ResourceType?.padEnd(maxResourceTypeLength!),
+              event.LogicalResourceId?.padEnd(maxResourceIdLength),
+              event.ResourceStatus?.padEnd(18),
               event.ResourceStatusReason,
             ].join(" | "),
           );
         }
       }
-
-      nextEventToken = eventResponse.NextToken;
-    } while (nextEventToken && lastEventRead! > lastEventPrinted);
+      if (lastEventRead! <= lastEventPrinted) {
+        break;
+      }
+    }
     if (firstEventRead) {
       lastEventPrinted = firstEventRead;
     }
@@ -99,10 +95,4 @@ export default function createEventLogWaiter(): StackWaiter {
 
 function maxStringLength(values: string[], min = 0) {
   return values.reduce((a, r) => Math.max(a, r.length), min);
-}
-
-function padRight(value: unknown, length: number) {
-  const str = `${value}`;
-  const padLength = length - str.length;
-  return padLength <= 0 ? str : str + " ".repeat(padLength);
 }
